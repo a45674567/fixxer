@@ -19,7 +19,7 @@ import hashlib
 import time
 import logging
 from pathlib import Path
-from typing import Optional, Iterator
+from typing import Iterator, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 import io
@@ -54,7 +54,7 @@ PREVIEW_DIR = ".fixxer_previews"
 EXCLUDED_DIRS = {PREVIEW_DIR, ".fixxer_cache", "__pycache__", ".git"}
 
 
-def scan_directory(directory: Path, recursive: bool = True) -> list[Path]:
+def scan_directory(directory: Path, recursive: bool = True) -> List[Path]:
     """Walk directory and return all supported image file paths.
 
     Excludes Fixxer's own working directories (.fixxer_previews etc.)

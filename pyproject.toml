@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=60", "wheel"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,50 +9,51 @@ description = "Open-source AI photo culling engine — rebuilt from first princi
 authors = [{ name = "Andre De Jager", email = "andre@andredejager.com.au" }]
 license = { text = "MIT" }
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 keywords = ["photography", "culling", "ai", "lightroom", "raw", "xmp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
     "Topic :: Multimedia :: Graphics",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "rawpy>=0.19",
-    "Pillow>=10.0",
+    "rawpy>=0.18",
+    "Pillow>=9.0",
     "imagehash>=4.3",
-    "numpy>=1.26",
-    "scipy>=1.11",
-    "opencv-python-headless>=4.8",
-    "click>=8.1",
-    "tqdm>=4.66",
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "opencv-python-headless>=4.6",
+    "click>=8.0",
+    "tqdm>=4.60",
     "piexif>=1.1",
-    "flask>=3.0",
+    "flask>=2.3",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4",
-    "pytest-cov>=4.1",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
 ]
 phase2 = [
     "mediapipe>=0.10",
-    "onnxruntime>=1.17",
-    "scikit-learn>=1.4",
+    "onnxruntime>=1.15",
+    "scikit-learn>=1.3",
 ]
 
 [project.scripts]
 fixxer = "fixxer.cli:main"
 
 [project.urls]
-Repository = "https://github.com/andredejager/fixxer"
-Issues = "https://github.com/andredejager/fixxer/issues"
+Repository = "https://github.com/a45674567/fixxer"
+Issues = "https://github.com/a45674567/fixxer/issues"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["fixxer*"]
+[tool.setuptools]
+packages = ["fixxer", "fixxer.ui"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

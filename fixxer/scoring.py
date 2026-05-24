@@ -20,7 +20,7 @@ import cv2
 import logging
 import math
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 from PIL import Image
 
 log = logging.getLogger("fixxer.scoring")
@@ -97,7 +97,7 @@ def _get_cascades():
 
 # ── Scorer 1: Sharpness ───────────────────────────────────────────────────────
 
-def score_sharpness(img_grey: np.ndarray) -> tuple[float, float]:
+def score_sharpness(img_grey: np.ndarray) -> Tuple[float, float]:
     """
     Laplacian variance sharpness score.
     img_grey: H×W uint8 array.
@@ -112,7 +112,7 @@ def score_sharpness(img_grey: np.ndarray) -> tuple[float, float]:
 
 # ── Scorer 2: Exposure ────────────────────────────────────────────────────────
 
-def score_exposure(img_grey: np.ndarray) -> tuple[float, float, float, float]:
+def score_exposure(img_grey: np.ndarray) -> Tuple[float, float, float, float]:
     """
     Histogram-based exposure score.
     Returns (score 0–1, mean_luminance, highlight_clip, shadow_clip).

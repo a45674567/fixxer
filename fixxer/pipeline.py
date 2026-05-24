@@ -16,7 +16,7 @@ import time
 import logging
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional, Callable
+from typing import Callable, List, Optional, Tuple
 
 from .db import ProjectDB
 from .ingestion import ingest_directory
@@ -50,7 +50,7 @@ class StageResult:
 
 @dataclass
 class PipelineResult:
-    stages: list[StageResult] = field(default_factory=list)
+    stages: List[StageResult] = field(default_factory=list)
     total_elapsed: float = 0.0
 
     @property
@@ -92,7 +92,7 @@ class Pipeline:
         if self.on_progress:
             self.on_progress(stage, current, total, detail)
 
-    def run(self, stages: list[str] = None) -> PipelineResult:
+    def run(self, stages: List[str] = None) -> PipelineResult:
         """
         Run the full pipeline (or a subset of stages).
 
