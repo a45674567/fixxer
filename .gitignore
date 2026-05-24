@@ -1,0 +1,20 @@
+# Fixxer project databases and caches
+.fixxer.db
+.fixxer_previews/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db

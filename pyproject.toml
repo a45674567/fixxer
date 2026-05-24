@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=60", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fixxer"
+version = "0.1.0"
+description = "Open-source AI photo culling engine — rebuilt from first principles"
+authors = [{ name = "Andre De Jager", email = "andre@andredejager.com.au" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["photography", "culling", "ai", "lightroom", "raw", "xmp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Multimedia :: Graphics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "rawpy>=0.19",
+    "Pillow>=10.0",
+    "imagehash>=4.3",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "opencv-python-headless>=4.8",
+    "click>=8.1",
+    "tqdm>=4.66",
+    "piexif>=1.1",
+    "flask>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+phase2 = [
+    "mediapipe>=0.10",
+    "onnxruntime>=1.17",
+    "scikit-learn>=1.4",
+]
+
+[project.scripts]
+fixxer = "fixxer.cli:main"
+
+[project.urls]
+Repository = "https://github.com/andredejager/fixxer"
+Issues = "https://github.com/andredejager/fixxer/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fixxer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
