@@ -327,6 +327,12 @@ def _render_ui() -> str:
   .empty h3 { font-size: 1.2rem; margin-bottom: 0.5rem; color: var(--text2); }
 
   /* ── Toast ── */
+  /* Fix #9: keyboard shortcut guide */
+  .kbd-guide { display: flex; align-items: center; gap: 6px; font-size: 11px;
+               color: var(--text3); margin-left: 0.5rem; }
+  .kbd { background: var(--surface2); border: 1px solid var(--border2);
+         border-radius: 4px; padding: 1px 6px; font-family: var(--mono);
+         font-size: 10px; color: var(--text2); }
   .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 300;
            background: var(--surface); border: 1px solid var(--border2);
            border-radius: 8px; padding: 0.75rem 1.25rem; font-size: 13px;
@@ -371,6 +377,12 @@ def _render_ui() -> str:
     <option value="ts-desc">Time ↓</option>
     <option value="sharpness-desc">Sharpness ↓</option>
   </select>
+  <div class="kbd-guide" title="Keyboard shortcuts">
+    <span class="kbd">K</span> Keep
+    <span class="kbd">R</span> Reject
+    <span class="kbd">←→</span> Navigate
+    <span class="kbd">Esc</span> Close
+  </div>
   <div class="toolbar-right">
     <button class="btn btn-export" onclick="exportXMP()">Export XMP</button>
   </div>

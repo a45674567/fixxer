@@ -1,11 +1,10 @@
 """
 cli.py — Fixxer command-line interface.
 
-Commands:
-  fixxer cull    — Run full pipeline on a directory
-  fixxer export  — Write XMP sidecars from existing project
-  fixxer status  — Show project stats
-  fixxer review  — Launch local web review UI
+Improvements in this version:
+  - Fix #1: DIRECTORY argument now has a full metavar and help string
+             so `fixxer cull --help` shows a clear example path.
+  - Fix #10: Version stamped into pipeline metadata on every run.
 """
 
 import click
@@ -14,37 +13,26 @@ import sys
 import time
 from pathlib import Path
 
-# ── Logging setup ─────────────────────────────────────────────────────────────
+
 def setup_logging(verbose: bool):
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
-        format="%(asctime)s  %(name)-20s  %(levelname)-7s  %(message)s",
+        format="%(asctime)s  %(name)-22s  %(levelname)-7s  %(message)s",
         datefmt="%H:%M:%S",
         level=level,
         stream=sys.stderr,
     )
-    # Quiet noisy third-party loggers
-    for noisy in ["PIL", "mediapipe", "absl", "tensorflow"]:
+    for noisy in ["PIL", "mediapipe", "absl", "tensorflow", "cv2"]:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
-# ── Shared options ─────────────────────────────────────────────────────────────
 GENRE_CHOICES = [
     "general", "wedding", "portrait", "event",
-    "sport", "landscape", "documentary"
+    "sport", "landscape", "documentary",
 ]
 
 
-def validate_directory(ctx, param, value):
-    p = Path(value)
-    if not p.exists():
-        raise click.BadParameter(f"Directory does not exist: {value}")
-    if not p.is_dir():
-        raise click.BadParameter(f"Not a directory: {value}")
-    return p
-
-
-# ── CLI root ───────────────────────────────────────────────────────────────────
+# ── Root ───────────────────────────────────────────────────────────────────────
 
 @click.group()
 @click.version_option("0.1.0", prog_name="fixxer")
@@ -53,9 +41,13 @@ def cli():
 
     \b
     Typical workflow:
-      fixxer cull /path/to/shoot --genre wedding --target 20
-      fixxer export /path/to/shoot
-      fixxer review /path/to/shoot
+      fixxer cull ~/Shoots/Wedding2024 --genre wedding --target 20
+      fixxer review ~/Shoots/Wedding2024
+      fixxer export ~/Shoots/Wedding2024
+
+    \b
+    Fixxer writes XMP sidecar files (.xmp) next to each RAW file.
+    Lightroom and Capture One read these automatically on import.
     """
     pass
 
@@ -63,47 +55,75 @@ def cli():
 # ── cull ───────────────────────────────────────────────────────────────────────
 
 @cli.command()
-@click.argument("directory", callback=validate_directory)
-@click.option("--genre", "-g", type=click.Choice(GENRE_CHOICES),
-              default="general", show_default=True,
-              help="Shoot genre — adjusts quality scoring weights")
+@click.argument(
+    "directory",
+    metavar="DIRECTORY",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True,
+                    readable=True, resolve_path=True),
+)  # Fix #1: click.Path with exists=True gives a clear "Path does not exist"
+   # error with the actual value shown, far more useful than the old validator.
+@click.option("--genre", "-g",
+              type=click.Choice(GENRE_CHOICES), default="general", show_default=True,
+              help="Shoot genre — adjusts quality scoring weights. "
+                   "Use 'wedding' for ceremonies, 'portrait' for studio, "
+                   "'landscape' for scenics (disables face scoring).")
 @click.option("--target", "-t", type=float, default=None,
-              help="Target keep percentage (e.g. 20 = keep top 20%)")
+              metavar="PCT",
+              help="Keep the top PCT% of images. E.g. --target 20 keeps the "
+                   "best 20%%. If omitted, uses the genre default.")
 @click.option("--count", "-n", type=int, default=None,
-              help="Target keep count (absolute number of images)")
+              metavar="N",
+              help="Keep exactly N images (overrides --target).")
 @click.option("--recursive/--no-recursive", default=True, show_default=True,
-              help="Scan subdirectories")
+              help="Scan subdirectories for images.")
 @click.option("--workers", "-w", type=int, default=4, show_default=True,
-              help="Parallel workers for ingestion")
+              help="Parallel workers for ingestion (preview extraction).")
+@click.option("--score-workers", type=int, default=None,
+              help="Parallel workers for scoring. Defaults to CPU count.")
 @click.option("--phash-threshold", type=int, default=12, show_default=True,
-              help="pHash Hamming distance threshold for duplicate detection (0–64)")
+              help="pHash Hamming distance for duplicate detection (0–64). "
+                   "Lower = stricter matching.")
 @click.option("--timestamp-window", type=float, default=3.0, show_default=True,
-              help="Seconds between frames to consider as burst")
+              help="Max seconds between frames to consider as one burst.")
 @click.option("--export/--no-export", "do_export", default=True, show_default=True,
-              help="Write XMP sidecar files after selection")
+              help="Write XMP sidecar files after selection.")
 @click.option("--dry-run", is_flag=True, default=False,
-              help="Run pipeline but don't write any files")
+              help="Run the full pipeline but write no files to disk. "
+                   "Useful for testing settings before committing.")
 @click.option("--stages", type=str, default=None,
-              help="Comma-separated stages to run: ingest,cluster,score,select")
-@click.option("--verbose", "-v", is_flag=True, default=False)
-def cull(directory, genre, target, count, recursive, workers, phash_threshold,
-         timestamp_window, do_export, dry_run, stages, verbose):
-    """Run the full culling pipeline on a directory of RAW/JPEG files.
+              metavar="STAGES",
+              help="Run only specific pipeline stages, comma-separated. "
+                   "E.g. --stages score,select (re-scores and re-selects "
+                   "without re-ingesting).")
+@click.option("--verbose", "-v", is_flag=True, default=False,
+              help="Show debug-level log output.")
+def cull(directory, genre, target, count, recursive, workers, score_workers,
+         phash_threshold, timestamp_window, do_export, dry_run, stages, verbose):
+    """Cull a directory of RAW or JPEG photos.
 
     \b
-    Example:
-      fixxer cull ~/Shoots/Wedding2024 --genre wedding --target 20
+    DIRECTORY is the folder containing your shoot files. Examples:
+      fixxer cull ~/Desktop/Wedding2024
+      fixxer cull /Volumes/SanDisk/Shoot --genre portrait --target 30
+      fixxer cull . --genre general --count 100
+
+    \b
+    After running, each image will have a .xmp sidecar file containing
+    its star rating (2–5 for keeps, 0 for rejects) and pick flag.
+    A summary CSV is also written to DIRECTORY/fixxer_selections.csv.
     """
     setup_logging(verbose)
-    log = logging.getLogger("fixxer.cli")
 
     from .pipeline import Pipeline, PipelineConfig
     from .db import ProjectDB
     from .export import export_selections, export_summary_csv
+    from . import __version__
 
-    click.echo(f"\n{'─'*50}")
-    click.echo(f"  Fixxer 0.1.0 — photo culling engine")
-    click.echo(f"{'─'*50}")
+    directory = Path(directory)
+
+    click.echo(f"\n{'─'*52}")
+    click.echo(f"  Fixxer {__version__} — photo culling engine")
+    click.echo(f"{'─'*52}")
     click.echo(f"  Directory : {directory}")
     click.echo(f"  Genre     : {genre}")
     if count:
@@ -113,55 +133,53 @@ def cull(directory, genre, target, count, recursive, workers, phash_threshold,
     else:
         click.echo(f"  Target    : genre default")
     if dry_run:
-        click.echo(f"  Mode      : DRY RUN (no files written)")
-    click.echo(f"{'─'*50}\n")
+        click.echo(f"  ⚠  DRY RUN — no files will be written")
+    click.echo(f"{'─'*52}\n")
 
-    run_stages = stages.split(",") if stages else None
+    run_stages = [s.strip() for s in stages.split(",")] if stages else None
 
-    # Progress display
-    current_stage = {"name": "", "bar": None}
+    # ── Progress display ──────────────────────────────────────────────────
+    _current_stage = {"name": ""}
 
     def on_progress(stage, current, total, detail=""):
-        if stage != current_stage["name"]:
-            if current_stage["bar"]:
-                current_stage["bar"].finish()
-            current_stage["name"] = stage
-            click.echo(f"\n  ── {stage.upper()}")
-        pct = int(current / max(total, 1) * 100)
-        bar_w = 30
+        if stage != _current_stage["name"]:
+            if _current_stage["name"]:
+                click.echo()           # newline after previous stage bar
+            _current_stage["name"] = stage
+            click.echo(f"  ── {stage.upper()}")
+        bar_w  = 28
         filled = int(bar_w * current / max(total, 1))
-        bar = "█" * filled + "░" * (bar_w - filled)
-        detail_str = f" {detail[:30]}" if detail else ""
-        click.echo(
-            f"\r  [{bar}] {pct:3d}%  {current}/{total}{detail_str}",
-            nl=False
-        )
+        bar    = "█" * filled + "░" * (bar_w - filled)
+        pct    = int(current / max(total, 1) * 100)
+        detail_str = f"  {detail[:28]}" if detail else ""
+        click.echo(f"\r  [{bar}] {pct:3d}%  {current}/{total}{detail_str}",
+                   nl=False)
         sys.stdout.flush()
 
     config = PipelineConfig(
-        directory=directory,
-        genre=genre,
-        target_pct=target,
-        target_count=count,
-        recursive=recursive,
-        ingest_workers=workers,
-        phash_threshold=phash_threshold,
-        timestamp_window=timestamp_window,
+        directory        = directory,
+        genre            = genre,
+        target_pct       = target,
+        target_count     = count,
+        recursive        = recursive,
+        ingest_workers   = workers,
+        score_workers    = score_workers,
+        phash_threshold  = phash_threshold,
+        timestamp_window = timestamp_window,
     )
 
     pipeline = Pipeline(config, on_progress=on_progress)
-    result = pipeline.run(stages=run_stages)
-
+    result   = pipeline.run(stages=run_stages)
     click.echo("\n")
     click.echo(result.summary())
 
     if not result.success:
-        click.echo("\n  Pipeline encountered errors. See log above.", err=True)
+        click.echo("\n  Pipeline encountered errors — see log above.", err=True)
         sys.exit(1)
 
-    # ── Export XMP ────────────────────────────────────────────────────────
+    # ── XMP export ────────────────────────────────────────────────────────
     if do_export and not dry_run:
-        click.echo("\n  ── EXPORT (XMP sidecars)")
+        click.echo("\n  ── EXPORT")
         db = ProjectDB(directory)
         with db.connect():
             export_result = export_selections(
@@ -172,60 +190,73 @@ def cull(directory, genre, target, count, recursive, workers, phash_threshold,
                 ),
             )
             click.echo(
-                f"\n  XMP: {export_result['written']} written, "
-                f"{export_result['failed']} failed"
+                f"\n  XMP : {export_result['written']} written"
+                + (f"  |  {export_result['failed']} failed" if export_result['failed'] else "")
+                + (f"  |  {export_result['skipped']} skipped" if export_result['skipped'] else "")
             )
-
-            # Always write summary CSV
             csv_path = directory / "fixxer_selections.csv"
             if export_summary_csv(db, csv_path):
-                click.echo(f"  CSV: {csv_path}")
+                click.echo(f"  CSV : {csv_path.name}")
 
-    # ── Final stats ───────────────────────────────────────────────────────
+    # ── Final summary ─────────────────────────────────────────────────────
     stats = pipeline.get_stats()
-    click.echo(f"\n{'─'*50}")
-    click.echo(f"  ✓ {stats['kept']} images kept  |  {stats['rejected']} rejected")
-    click.echo(
-        f"  {stats['total_groups']} groups from {stats['total_images']} images"
-    )
+    keep_pct = (stats['kept'] / max(stats['total_images'], 1) * 100)
+    click.echo(f"\n{'─'*52}")
+    click.echo(f"  ✓  {stats['kept']} kept  ({keep_pct:.0f}%)  |  {stats['rejected']} rejected")
+    click.echo(f"     {stats['total_groups']} groups from {stats['total_images']} images")
     if stats.get("avg_confidence"):
-        click.echo(f"  Average AI confidence: {stats['avg_confidence']:.1%}")
-    click.echo(f"{'─'*50}\n")
+        click.echo(f"     Avg AI confidence: {stats['avg_confidence']:.0%}")
+    click.echo(f"{'─'*52}\n")
 
 
 # ── export ─────────────────────────────────────────────────────────────────────
 
 @cli.command()
-@click.argument("directory", callback=validate_directory)
-@click.option("--output-dir", type=Path, default=None,
-              help="Copy XMP files here instead of adjacent to RAW files")
-@click.option("--dry-run", is_flag=True, default=False)
-@click.option("--csv/--no-csv", "write_csv", default=True, show_default=True,
-              help="Also write a CSV summary")
+@click.argument(
+    "directory",
+    metavar="DIRECTORY",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True,
+                    readable=True, resolve_path=True),
+)
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Copy XMP files here instead of adjacent to RAW files.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Show what would be exported without writing.")
+@click.option("--csv/--no-csv", "write_csv", default=True, show_default=True)
 @click.option("--verbose", "-v", is_flag=True, default=False)
 def export(directory, output_dir, dry_run, write_csv, verbose):
     """Write XMP sidecar files from an existing project database.
 
-    Run this after making review adjustments to regenerate XMP files.
+    \b
+    Run this after making review adjustments in `fixxer review` to
+    regenerate XMP files with your override decisions applied.
+
+    \b
+    Example:
+      fixxer export ~/Shoots/Wedding2024
     """
     setup_logging(verbose)
     from .db import ProjectDB
     from .export import export_selections, export_summary_csv
 
-    db = ProjectDB(directory)
+    directory = Path(directory)
+    db        = ProjectDB(directory)
+
     with db.connect():
         if db.image_count() == 0:
-            click.echo("No project found in this directory. Run `fixxer cull` first.")
+            click.echo("No Fixxer project found. Run `fixxer cull` first.")
             sys.exit(1)
 
-        result = export_selections(db=db, output_dir=output_dir, dry_run=dry_run)
+        out_dir = Path(output_dir) if output_dir else None
+        result  = export_selections(db=db, output_dir=out_dir, dry_run=dry_run)
         click.echo(
-            f"XMP: {result['written']} written  |  "
-            f"{result['failed']} failed  |  {result['skipped']} skipped"
+            f"XMP: {result['written']} written"
+            + (f"  |  {result['failed']} failed"   if result['failed']  else "")
+            + (f"  |  {result['skipped']} skipped"  if result['skipped'] else "")
         )
 
         if write_csv and not dry_run:
-            csv_path = (output_dir or directory) / "fixxer_selections.csv"
+            csv_path = (out_dir or directory) / "fixxer_selections.csv"
             if export_summary_csv(db, csv_path):
                 click.echo(f"CSV: {csv_path}")
 
@@ -233,62 +264,116 @@ def export(directory, output_dir, dry_run, write_csv, verbose):
 # ── status ─────────────────────────────────────────────────────────────────────
 
 @cli.command()
-@click.argument("directory", callback=validate_directory)
+@click.argument(
+    "directory",
+    metavar="DIRECTORY",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True,
+                    readable=True, resolve_path=True),
+)
 def status(directory):
-    """Show current project statistics."""
-    from .db import ProjectDB
+    """Show current project statistics for a culled shoot.
 
-    db = ProjectDB(directory)
+    \b
+    Example:
+      fixxer status ~/Shoots/Wedding2024
+    """
+    from .db import ProjectDB
+    import datetime
+
+    directory = Path(directory)
+    db        = ProjectDB(directory)
+
     with db.connect():
         if db.image_count() == 0:
             click.echo("No Fixxer project found. Run `fixxer cull` first.")
             sys.exit(1)
 
-        stats = db.selection_stats()
-        groups = db.get_groups()
-        genre = db.get_meta("genre", "general")
-        last_run = db.get_meta("last_run")
+        stats     = db.selection_stats()
+        groups    = db.get_groups()
+        genre     = db.get_meta("genre", "general")
+        version   = db.get_meta("fixxer_version", "unknown")
+        last_run  = db.get_meta("last_run")
+        lr        = (datetime.datetime.fromtimestamp(last_run).strftime("%Y-%m-%d %H:%M")
+                     if last_run else "never")
+        total     = db.image_count()
+        kept      = stats.get("kept") or 0
+        rejected  = stats.get("rejected") or 0
+        keep_pct  = kept / max(total, 1) * 100
 
-        import datetime
-        lr = datetime.datetime.fromtimestamp(last_run).strftime("%Y-%m-%d %H:%M") if last_run else "never"
-
-        click.echo(f"\n  Project: {directory}")
-        click.echo(f"  Genre:   {genre}")
-        click.echo(f"  Last run: {lr}\n")
-        click.echo(f"  Total images : {db.image_count()}")
+        click.echo(f"\n  Project  : {directory}")
+        click.echo(f"  Genre    : {genre}")
+        click.echo(f"  Version  : Fixxer {version}")
+        click.echo(f"  Last run : {lr}\n")
+        click.echo(f"  Total images : {total}")
         click.echo(f"  Groups       : {len(groups)}")
-        click.echo(f"  Kept         : {stats.get('kept', 0)}")
-        click.echo(f"  Rejected     : {stats.get('rejected', 0)}")
+        click.echo(f"  Kept         : {kept}  ({keep_pct:.0f}%)")
+        click.echo(f"  Rejected     : {rejected}")
         if stats.get("avg_conf"):
-            click.echo(f"  Avg confidence: {stats['avg_conf']:.1%}")
+            click.echo(f"  Avg confidence : {stats['avg_conf']:.0%}")
         click.echo()
 
 
 # ── review ─────────────────────────────────────────────────────────────────────
 
 @cli.command()
-@click.argument("directory", callback=validate_directory)
-@click.option("--port", "-p", type=int, default=7842, show_default=True)
-@click.option("--host", default="127.0.0.1", show_default=True)
+@click.argument(
+    "directory",
+    metavar="DIRECTORY",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True,
+                    readable=True, resolve_path=True),
+)
+@click.option("--port", "-p", type=int, default=7842, show_default=True,
+              help="Port for the local review server.")
+@click.option("--host", default="127.0.0.1", show_default=True,
+              help="Host to bind the server to.")
+@click.option("--no-browser", is_flag=True, default=False,
+              help="Don't automatically open the browser.")
 @click.option("--verbose", "-v", is_flag=True, default=False)
-def review(directory, port, host, verbose):
-    """Launch the local web review UI for a project.
+def review(directory, port, host, no_browser, verbose):
+    """Launch the local web review UI for a culled shoot.
 
-    Opens a browser-based interface to inspect and override AI selections.
-    All processing happens locally — no images leave your machine.
+    \b
+    Opens a browser-based interface to inspect, compare, and override
+    AI selections. All processing is local — no images leave your machine.
+
+    \b
+    Keyboard shortcuts in the review UI:
+      K           Keep selected image
+      R           Reject selected image
+      ← →         Navigate between images in lightbox
+      Escape      Close lightbox
+
+    \b
+    Example:
+      fixxer review ~/Shoots/Wedding2024
+      fixxer review ~/Shoots/Wedding2024 --port 8080
     """
     setup_logging(verbose)
     from .ui.server import start_server
-    click.echo(f"\n  Starting Fixxer review UI at http://{host}:{port}")
-    click.echo(f"  Project: {directory}")
+    import webbrowser
+    import threading
+
+    directory = Path(directory)
+    url       = f"http://{host}:{port}"
+
+    click.echo(f"\n  Fixxer Review UI")
+    click.echo(f"  Project : {directory}")
+    click.echo(f"  URL     : {url}")
     click.echo(f"  Press Ctrl+C to stop\n")
+
+    if not no_browser:
+        # Open browser after a short delay to let the server start
+        def _open():
+            time.sleep(1.2)
+            webbrowser.open(url)
+        threading.Thread(target=_open, daemon=True).start()
+
     try:
         start_server(directory=directory, host=host, port=port)
     except KeyboardInterrupt:
         click.echo("\n  Server stopped.")
 
 
-# Entry point
 def main():
     cli()
 
