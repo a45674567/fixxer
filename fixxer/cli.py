@@ -35,7 +35,7 @@ GENRE_CHOICES = [
 # ── Root ───────────────────────────────────────────────────────────────────────
 
 @click.group()
-@click.version_option("0.1.0", prog_name="fixxer")
+@click.version_option("0.1.1", prog_name="fixxer")
 def cli():
     """Fixxer — Open-source AI photo culling engine.
 
