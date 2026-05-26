@@ -31,10 +31,8 @@ def create_app(directory: Path):
 
     app = Flask(__name__, static_folder=None)
     app.config["DIRECTORY"] = directory
-    app.config["DB"] = ProjectDB(directory)
-
     def get_db():
-        return app.config["DB"]
+        return ProjectDB(directory)
 
     # ── API: Project stats ────────────────────────────────────────────────
 

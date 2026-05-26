@@ -35,7 +35,7 @@ GENRE_CHOICES = [
 # ── Root ───────────────────────────────────────────────────────────────────────
 
 @click.group()
-@click.version_option("0.1.1", prog_name="fixxer")
+@click.version_option("0.1.0", prog_name="fixxer")
 def cli():
     """Fixxer — Open-source AI photo culling engine.
 
@@ -375,7 +375,12 @@ def review(directory, port, host, no_browser, verbose):
 
 
 def main():
-    cli()
+    # If called with no arguments, launch the interactive TUI
+    if len(sys.argv) == 1:
+        from .ui.tui import run_tui
+        run_tui()
+    else:
+        cli()
 
 
 if __name__ == "__main__":
