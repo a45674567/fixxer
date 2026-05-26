@@ -1,231 +1,220 @@
 # Fixxer
 
-**Open-source AI photo culling engine — rebuilt from first principles.**
+**Open-source AI photo culling engine.**
 
-Fixxer automates the triage step between capture and delivery. Given a directory of RAW or JPEG files, it produces XMP sidecar annotations (star ratings, colour labels, pick flags) that Lightroom and Capture One read natively — with no subscription, no cloud upload, and no black box.
+Fixxer culls your RAW or JPEG shoot — grouping bursts, scoring sharpness, exposure, and blink detection, selecting the best frames, and writing XMP sidecar files that Lightroom and Capture One read automatically.
 
----
-
-## What it does
-
-1. **Scans** your shoot directory, extracting embedded JPEG previews from RAW files without a full decode (~10–50× faster than postprocessing)
-2. **Groups** burst sequences using timestamp + perceptual hash clustering — compressing the decision space from N images to N/3–5 groups
-3. **Scores** each image across sharpness (Laplacian variance), exposure (histogram analysis), and eye-state / face presence (OpenCV Haar cascades)
-4. **Selects** the top N% using genre-calibrated composite scoring with within-group winner election
-5. **Exports** XMP sidecar files adjacent to each RAW — ready to import into Lightroom or Capture One
-
-Everything runs locally. No images leave your machine.
+Runs entirely on your Mac. No subscription. No cloud upload. No black box.
 
 ---
 
-## Install
+## Setup from scratch (nothing installed)
+
+If you have a stock Mac with nothing installed, follow these steps in order. This takes about 10 minutes.
+
+### Step 1 — Install Homebrew
+
+Homebrew is a package manager for macOS. Open **Terminal** (press `Cmd + Space`, type "Terminal", press Enter) and run:
 
 ```bash
-pip install fixxer
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-**Dependencies installed automatically:** `rawpy`, `Pillow`, `imagehash`, `numpy`, `scipy`, `opencv-python-headless`, `click`, `flask`
+Follow the prompts. When it finishes, it may ask you to run two more commands to add Homebrew to your PATH — do that if shown.
 
-**System requirement:** `exiftool` for EXIF extraction  
-macOS: `brew install exiftool`  
-Ubuntu/Debian: `apt install libimage-exiftool-perl`
+Close and reopen Terminal when done.
+
+### Step 2 — Install Python
+
+```bash
+brew install python
+```
+
+This installs Python 3 and pip3. Verify:
+
+```bash
+python3 --version
+pip3 --version
+```
+
+Both should print a version number.
+
+### Step 3 — Install exiftool
+
+Fixxer uses exiftool to read camera metadata from RAW files.
+
+```bash
+brew install exiftool
+```
+
+### Step 4 — Install Fixxer
+
+```bash
+pip3 install git+https://github.com/a45674567/fixxer.git
+```
+
+This downloads and installs Fixxer and all its dependencies automatically.
+
+### Step 5 — Add Fixxer to your PATH
+
+After installing, you may need to tell your terminal where to find the `fixxer` command. Run:
+
+```bash
+echo 'export PATH="$HOME/Library/Python/3.11/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+> **Note:** If Python installed a different version (e.g. 3.12), replace `3.11` with your version number. Check with `python3 --version`.
+
+### Step 6 — Verify the install
+
+```bash
+fixxer --version
+```
+
+Should print: `fixxer, version 0.1.1`
 
 ---
 
-## Usage
+## Running Fixxer
 
-### CLI — full pipeline
+### Cull a shoot
 
-```bash
-# Cull a wedding shoot, keep top 20%
-fixxer cull /Volumes/Photos/Wedding_2024 --genre wedding --target 20
-
-# Portrait session — keep top 30%, absolute count
-fixxer cull ~/Shoots/Portraits_June --genre portrait --count 80
-
-# Preview what would be selected without writing anything
-fixxer cull ~/Shoots/Event --dry-run
-
-# Check project status after a run
-fixxer status /Volumes/Photos/Wedding_2024
-
-# Re-export XMP after reviewing in the web UI
-fixxer export /Volumes/Photos/Wedding_2024
-```
-
-### Web review UI
+Point Fixxer at your shoot folder. Drag the folder from Finder into Terminal to paste its path automatically.
 
 ```bash
-fixxer review /Volumes/Photos/Wedding_2024
-# Opens at http://localhost:7842
+fixxer cull ~/Desktop/MyShoot --genre wedding
 ```
 
-The review UI shows all AI selections in a grid. Click any image to open the lightbox. Press **K** to keep, **R** to reject. Every override is logged as a correction event for future personalisation. Hit **Export XMP** when done.
+Available genres: `general` `wedding` `portrait` `event` `sport` `landscape` `documentary`
 
-### Python API
-
-```python
-from pathlib import Path
-from fixxer.pipeline import Pipeline, PipelineConfig
-
-config = PipelineConfig(
-    directory=Path("/Volumes/Photos/Wedding_2024"),
-    genre="wedding",
-    target_pct=20.0,
-)
-
-pipeline = Pipeline(config)
-result = pipeline.run()
-print(result.summary())
-# ── Fixxer Pipeline Results ──
-#   ✓ ingest         2347 items  (18.2s)
-#   ✓ cluster        2347 items  (4.1s)
-#   ✓ score          2347 items  (94.3s)
-#   ✓ select          469 items  (0.2s)
-#   Total time: 116.8s
+To keep the top 20% of frames:
+```bash
+fixxer cull ~/Desktop/MyShoot --genre wedding --target 20
 ```
 
-Run specific stages only:
+To keep exactly 400 images:
+```bash
+fixxer cull ~/Desktop/MyShoot --genre wedding --count 400
+```
 
-```python
-result = pipeline.run(stages=["score", "select"])  # Re-score and re-select only
+### Review selections in your browser
+
+```bash
+fixxer review ~/Desktop/MyShoot
+```
+
+Opens a local web interface at `http://localhost:7842`. Browse your selections, click any image to see scores, press **K** to keep or **R** to reject. Hit **Export XMP** when done.
+
+### Export XMP sidecar files
+
+XMP files are written automatically after culling. To re-export after making review changes:
+
+```bash
+fixxer export ~/Desktop/MyShoot
+```
+
+### Check project status
+
+```bash
+fixxer status ~/Desktop/MyShoot
 ```
 
 ---
 
-## Genres
+## Importing into Lightroom
 
-Genre selection adjusts quality score weights — what counts as a disqualifying defect varies by context.
+1. Run `fixxer cull` on your shoot folder
+2. Open Lightroom Classic → **File → Import Photos and Video**
+3. Navigate to your shoot folder and import as normal
+4. In the Library module, filter by **Flagged** or **★★★+** to see Fixxer's picks
+
+If you've already imported the folder into Lightroom before culling:
+- Select all images → **Metadata → Read Metadata from Files**
+
+---
+
+## Importing into Capture One
+
+XMP sidecars are read automatically for DNG files. For manufacturer RAW formats (CR3, ARW, NEF):
+
+- Go to **File → Import XMP** or enable XMP reading in your session settings
+
+---
+
+## Important: files must be on your Mac
+
+Fixxer reads every image file during processing. Files stored in iCloud, OneDrive, or Google Drive must be downloaded locally first.
+
+**In Finder:** select your shoot folder → right-click → **"Keep Downloaded"** or **"Always keep on this device"**. Wait for the download to complete before running Fixxer.
+
+Working from a local drive (e.g. your Desktop or an external SSD) is faster and more reliable than working from cloud storage.
+
+---
+
+## Genres and what they do
+
+Each genre adjusts how Fixxer weights quality factors:
 
 | Genre | Sharpness | Exposure | Blink penalty | Expression |
 |---|---|---|---|---|
-| `wedding` | 0.35 | 0.25 | 0.30 | 0.10 |
-| `portrait` | 0.40 | 0.25 | 0.35 | — |
-| `event` | 0.30 | 0.30 | 0.25 | 0.15 |
-| `sport` | 0.50 | 0.25 | 0.15 | 0.10 |
-| `landscape` | 0.50 | 0.40 | — | — |
-| `documentary` | 0.25 | 0.25 | 0.30 | 0.20 |
-| `general` | 0.35 | 0.30 | 0.25 | 0.10 |
+| `wedding` | medium | medium | high | low |
+| `portrait` | high | medium | high | — |
+| `event` | medium | medium | medium | medium |
+| `sport` | high | medium | low | low |
+| `landscape` | high | high | none | none |
+| `documentary` | low | medium | medium | high |
+| `general` | medium | medium | medium | low |
 
-Sport has a lower blink penalty because athletes commonly have closed eyes mid-action. Landscape ignores blink entirely (no faces expected). You can customise genre weights in `fixxer/scoring.py`.
+Sport has a low blink penalty because athletes often have closed eyes mid-action. Landscape ignores faces entirely.
 
 ---
 
-## Output files
+## What Fixxer creates in your folder
 
-After running, your shoot directory will contain:
+After running, your shoot folder will contain:
 
 ```
-Wedding_2024/
+MyShoot/
 ├── IMG_0001.CR3
-├── IMG_0001.xmp          ← Star rating + pick flag + colour label
+├── IMG_0001.xmp          ← star rating + pick flag
 ├── IMG_0002.CR3
 ├── IMG_0002.xmp
 ├── ...
-├── fixxer_selections.csv ← Full scoring report (open in Excel)
-└── .fixxer.db            ← Project state (SQLite — safe to delete to reset)
+├── fixxer_selections.csv ← full scoring report (open in Excel)
+└── .fixxer.db            ← project database (safe to delete to reset)
 ```
 
-### Lightroom import
-
-1. Run `fixxer cull` on your shoot directory
-2. In Lightroom: **File → Import Photos and Video**
-3. Import as normal — star ratings and pick flags will be applied automatically
-4. Filter by ★★★+ or Flagged to see Fixxer's selections
-
-Alternatively: import first, then in Library module select all → **Metadata → Read Metadata from Files** to pull in XMP from existing sidecars.
-
-### Capture One import
-
-XMP sidecars are read automatically for DNG files. For manufacturer RAW formats (CR3, ARW, NEF), use **File → Import XMP** or import via a session that has XMP reading enabled.
+To start fresh on a shoot, delete `.fixxer.db` and run `fixxer cull` again.
 
 ---
 
-## Architecture
+## Troubleshooting
 
-```
-RAW files on disk
-      │
-      ▼
- [Ingestion]  ── rawpy preview extract (no full decode) + exiftool EXIF
-      │
-      ▼
- [Clustering]  ── timestamp window + pHash Hamming distance grouping
-      │
-      ▼
- [Scoring]  ── Laplacian sharpness + histogram exposure + OpenCV face/eye
-      │
-      ▼
- [Selection]  ── group-level winner election + percentile threshold
-      │
-      ▼
- [Export]  ── XMP sidecar write per image + CSV summary
-```
+**`zsh: command not found: fixxer`**
+Run the PATH setup from Step 5 again, then open a new Terminal window.
 
-All state persists to a SQLite database (`.fixxer.db`) in the project directory. Every stage is idempotent — re-running picks up where it left off and only reprocesses new files.
+**`fixxer cull` says "No supported image files found"**
+Check that the folder path is correct and the files are downloaded locally (not cloud stubs).
 
----
+**Files are on OneDrive/iCloud and showing I/O errors**
+The files aren't downloaded. In Finder, right-click the folder → "Keep Downloaded". Wait for sync to complete.
 
-## Performance targets (Phase 1)
+**Review UI shows "Failed to load project"**
+The cull may not have completed. Run `fixxer status /path/to/shoot` to check.
 
-| Metric | Target | 
-|---|---|
-| Throughput | ≥ 600 RAW files/min on M2 MacBook Air |
-| First result | ≤ 60s from project open |
-| Blink recall | ≥ 88% (Phase 1 Haar cascade) |
-| Blur detection | ≥ 82% agreement with manual review |
-| XMP round-trip | 100% Lightroom compatible |
-
-Phase 2 adds a trained EfficientNet-B0 multi-head backbone and MediaPipe FaceMesh for EAR-based blink detection (target: ≥ 95% recall).
-
----
-
-## Roadmap
-
-**Phase 1 (current) — Functional replica**
-- [x] RAW preview extraction via rawpy
-- [x] pHash duplicate grouping
-- [x] Laplacian sharpness scoring
-- [x] OpenCV Haar cascade eye detection
-- [x] Genre-calibrated composite scoring
-- [x] Group-level winner election
-- [x] XMP sidecar export
-- [x] CLI + local web review UI
-- [x] Fully idempotent pipeline with SQLite state
-
-**Phase 2 — Performance parity**
-- [ ] Multi-head EfficientNet-B0 IQA backbone (ONNX + CoreML)
-- [ ] MediaPipe FaceMesh EAR-based blink detection
-- [ ] Photographer preference feedback loop (sklearn SGD)
-- [ ] Onboarding preference seeding (drag keeper examples)
-- [ ] Calibrated confidence scores per decision
-- [ ] Parallel scoring pipeline
-
-**Phase 3 — Superior version**
-- [ ] DINOv2 moment rarity scoring (protect unique frames)
-- [ ] Confidence-gated review (only uncertain decisions surface)
-- [ ] Narrative arc coverage (wedding ceremony beat detection)
-- [ ] Opt-in federated personalisation prior
-- [ ] `pip install fixxer` Python library API
+**Want to re-cull with different settings**
+Delete `.fixxer.db` from the shoot folder and run `fixxer cull` again with new options.
 
 ---
 
 ## Privacy
 
-Fixxer is fully local. No images, previews, or metadata are transmitted anywhere. The only network activity is the optional federated personalisation feature (Phase 3), which is opt-in and transmits only embedding vectors — never images.
-
----
-
-## Contributing
-
-Issues and PRs welcome. The highest-value contributions in Phase 1:
-
-1. **Genre weight calibration** — if you have a dataset of manually-culled shoots for a specific genre, use it to tune the weight vectors in `fixxer/scoring.py`
-2. **Manufacturer compatibility testing** — test preview extraction quality across Fujifilm, Sony, Nikon, Canon on your hardware
-3. **XMP compatibility** — test the output against Capture One, Lightroom Mobile, ON1, and report any import failures
+Fixxer runs entirely on your machine. No images, previews, or metadata are sent anywhere. The review UI is a local web server — `http://localhost:7842` is only accessible on your own computer.
 
 ---
 
 ## License
 
-MIT © Andre De Jager
+MIT © Andre De Jager  
+[github.com/a45674567/fixxer](https://github.com/a45674567/fixxer)
